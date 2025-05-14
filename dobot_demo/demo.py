@@ -18,8 +18,9 @@ class adderClient(Node):
         self.SpeedFactor_l = self.create_client(SpeedFactor, '/dobot_bringup_ros2/srv/SpeedFactor')
         self.MovL_l = self.create_client(MovL, '/dobot_bringup_ros2/srv/MovL')
         self.DO_l = self.create_client(DO, '/dobot_bringup_ros2/srv/DO')
+        self.DI_l = self.create_client(DI, '/dobot_bringup_ros2/srv/DI')
         self.GetAngle_l = self.create_client(GetAngle, '/dobot_bringup_ros2/srv/GetAngle')
-
+        self.GetDOGroup_l = self.create_client(GetDOGroup, '/dobot_bringup_ros2/srv/GetDOGroup')
         while not self.EnableRobot_l.wait_for_service(timeout_sec=1.0):
             self.get_logger().info('service not available, waiting again...')
 
@@ -29,6 +30,9 @@ class adderClient(Node):
         spe = SpeedFactor.Request()
         spe.ratio = 10
         response = self.SpeedFactor_l.call_async(spe)
+        self.DO(1, 1)  # DO1 = ORG    
+        self.DO(3, 1)
+ 
         print(response)
 
     def point(self, Move, X_j1, Y_j2, Z_j3, RX_j4, RY_j5, RZ_j6):
@@ -57,25 +61,40 @@ class adderClient(Node):
         else:
             print("無該指令")
 
-    def DO(self, index, status):
+    def DO(self, index, status,time=100):
         DO_V = DO.Request()
         DO_V.index = index
         DO_V.status = status
+        DO_V.time=time
         response = self.DO_l.call_async(DO_V)
         print(response)
+    def DI(self,index):
+        DI_V=DI.Request()
+        DI_V.index=index
+
+        future = self.DI_l.call_async(DI_V)
+        rclpy.spin_until_future_complete(self, future)
+        response = future.result()
+        return response
 
     def GetAngle(self):
         GetAngle_V = GetAngle.Request()
         response = self.GetAngle_l.call_async(GetAngle_V)
         return response
-
+    def GetDOGroup(self):
+        GetDOGroup_V=GetDOGroup.Request()
+        GetDOGroup_V.index_group = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+        response=self.GetDOGroup_l.call_async(GetDOGroup_V)
+        return response
+    def start_point(self):
+        # 啟動 START 訊號
+        self.DO(4, 1)
 class RobotArmMonitor(Node):
     def __init__(self, adder_client):
         super().__init__('robot_arm_monitor')
         self.joint = [0.0] * 6
         self.client_node = adder_client
-
-
+        self.pre_craw = 0
         self.suscriber_Mov = self.create_subscription(
             JointTrajectoryPoint,
             DeviceDataTypeEnum.robot_arm,
@@ -97,15 +116,24 @@ class RobotArmMonitor(Node):
     def listener_callback(self, msg):
         self.get_logger().info("listener_callback triggered")
         self.joint = msg.positions[0:6]
+        self.craw=msg.positions[6]
         self.client_node.point("MovJ", *self.joint)
-
-
+        
+        if(self.craw<0 and self.pre_craw>0) :
+            self.client_node.DO(6,1)
+            self.client_node.start_point()
+            self.pre_craw = self.craw
+        
+        if(self.craw>0) :
+            self.client_node.DO(1, 1)
+            self.pre_craw = self.craw
+        
         angles = self.position_returner()
         # ✅ 發佈 joint angles
         msg = Float32MultiArray()
         msg.data = angles
         self.publisher_joint_position.publish(msg)
-
+        self.client_node.GetDOGroup()
     def position_returner(self):
         future = self.client_node.GetAngle()
         rclpy.spin_until_future_complete(self.client_node, future)
@@ -119,7 +147,8 @@ class RobotArmMonitor(Node):
 def main(args=None):
     rclpy.init(args=args)
     node = adderClient('adder_client')
-    
+    node.initialization()
+    node.GetDOGroup()
     monitor = RobotArmMonitor(node)
 
     rclpy.spin(monitor)
