@@ -28,7 +28,7 @@ class adderClient(Node):
         response = self.EnableRobot_l.call_async(EnableRobot.Request())
         print(response)
         spe = SpeedFactor.Request()
-        spe.ratio = 10
+        spe.ratio = 2
         response = self.SpeedFactor_l.call_async(spe)
         self.DO(1, 1)  # DO1 = ORG    
         self.DO(3, 1)
@@ -107,11 +107,8 @@ class RobotArmMonitor(Node):
             DeviceDataTypeEnum.realrobot,     
             10
         )
-        angles = self.position_returner()
-        msg = Float32MultiArray()
-        msg.data = angles
-        self.publisher_joint_position.publish(msg)
-
+        # Set up a timer to publish joint angles and call GetDOGroup every 5 seconds
+        self.timer = self.create_timer(5.0, self.timer_callback)
 
     def listener_callback(self, msg):
         self.get_logger().info("listener_callback triggered")
@@ -127,13 +124,15 @@ class RobotArmMonitor(Node):
         if(self.craw>0) :
             self.client_node.DO(1, 1)
             self.pre_craw = self.craw
-        
+
+    def timer_callback(self):
         angles = self.position_returner()
         # ✅ 發佈 joint angles
         msg = Float32MultiArray()
         msg.data = angles
         self.publisher_joint_position.publish(msg)
         self.client_node.GetDOGroup()
+
     def position_returner(self):
         future = self.client_node.GetAngle()
         rclpy.spin_until_future_complete(self.client_node, future)
