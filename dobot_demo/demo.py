@@ -103,7 +103,7 @@ class adderClient(Node):
         response = self.GetDOGroup_l.call_async(GetDOGroup_V)
         return response
 
-    # 發送「啟動」訊號（DO4 = 1）
+    # 發送爪子「啟動」訊號（DO4 = 1）
     def start_point(self):
         self.DO(4, 1)
 
@@ -137,12 +137,13 @@ class RobotArmMonitor(Node):
     def listener_callback(self, msg):
         self.get_logger().info("listener_callback triggered")
 
-        self.joint = msg.positions[0:6]  # 取出前6個作為關節角度
+        self.joint = msg.positions[0:6]  # 取出前六個作為關節角度
         self.craw = msg.positions[6]    # 第七個為抓取器狀態
 
-        # 以 MovJ 方式移動
+        # 手臂移動
         self.client_node.point("MovJ", *self.joint)
 
+        # 爪子移動
         # 抓取動作觸發判斷（從開->閉）
         if self.craw < 0 and self.pre_craw > 0:
             self.client_node.DO(6, 1)  # 抓取 DO6
